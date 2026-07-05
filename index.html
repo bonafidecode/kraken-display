@@ -37,38 +37,33 @@
 
     const CTR = 320; 
     const MAX_RAD = 310; 
-    const R3 = MAX_RAD;          // Outer Ring edge (310px)
-    const R2 = MAX_RAD * 0.66;   // Middle Ring edge (~204px)
-    const R1 = MAX_RAD * 0.33;   // Inner Circle edge (~102px)
+    const R3 = MAX_RAD;          
+    const R2 = MAX_RAD * 0.66;   
+    const R1 = MAX_RAD * 0.33;   
 
-    // Hardware State tracking
     let globalLoad = 0;
     let globalTemp = 0;
     let coreLoads = new Array(24).fill(0); 
 
-    // Liquid wave animation variables
     let waveTime = 0;
 
-    // Strict color rule helper: 90-100% is explicitly Red
     function getDynamicColor(load) {
-      if (load >= 90) return '#ff3333'; // Red alert zone
-      if (load >= 40) return '#ff9900'; // Orange medium load
-      return '#00ff66';                // Green chill zone
+      if (load >= 90) return '#ff3333'; 
+      if (load >= 40) return '#ff9900'; 
+      return '#00ff66';                
     }
 
-    // Main Draw Engine Loop
     function render() {
       ctx.clearRect(0, 0, 640, 640);
       waveTime += 0.05;
 
-      // --- 1. OUTER RING: 16 E-CORES (Fills from R3 inward to R2) ---
+      // --- 1. OUTER RING: 16 E-CORES ---
       const eCount = 16;
       for (let i = 0; i < eCount; i++) {
         const startAng = (i * (360 / eCount) - 90 + 0.5) * Math.PI / 180;
         const endAng = ((i + 1) * (360 / eCount) - 90 - 0.5) * Math.PI / 180;
         const load = coreLoads[i + 8] || 0; 
 
-        // Draw the empty background track for the pie bar
         ctx.beginPath();
         ctx.arc(CTR, CTR, R3, startAng, endAng, false);
         ctx.arc(CTR, CTR, R2, endAng, startAng, true);
@@ -79,10 +74,8 @@
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Calculate load bar fill pushing inward toward the center
         const fillRadInward = R3 - ((load / 100) * (R3 - R2));
 
-        // Draw active progress bar fill segment
         ctx.beginPath();
         ctx.arc(CTR, CTR, R3, startAng, endAng, false);
         ctx.arc(CTR, CTR, fillRadInward, endAng, startAng, true);
@@ -90,7 +83,6 @@
         ctx.fillStyle = getDynamicColor(load);
         ctx.fill();
 
-        // Center text cleanly in the middle of the geometric segment
         const midAng = (startAng + endAng) / 2;
         const midRad = (R2 + R3) / 2;
         const tx = CTR + midRad * Math.cos(midAng);
@@ -103,14 +95,13 @@
         ctx.fillText(`${Math.round(load)}%`, tx, ty);
       }
 
-      // --- 2. MIDDLE RING: 8 P-CORES (Fills from R2 inward to R1) ---
+      // --- 2. MIDDLE RING: 8 P-CORES ---
       const pCount = 8;
       for (let i = 0; i < pCount; i++) {
         const startAng = (i * (360 / pCount) - 90 + 0.7) * Math.PI / 180;
         const endAng = ((i + 1) * (360 / pCount) - 90 - 0.7) * Math.PI / 180;
         const load = coreLoads[i] || 0; 
 
-        // Draw the empty background track for the pie bar
         ctx.beginPath();
         ctx.arc(CTR, CTR, R2, startAng, endAng, false);
         ctx.arc(CTR, CTR, R1, endAng, startAng, true);
@@ -121,10 +112,8 @@
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Calculate load bar fill pushing inward toward the center
         const fillRadInward = R2 - ((load / 100) * (R2 - R1));
 
-        // Draw active progress bar fill segment
         ctx.beginPath();
         ctx.arc(CTR, CTR, R2, startAng, endAng, false);
         ctx.arc(CTR, CTR, fillRadInward, endAng, startAng, true);
@@ -132,7 +121,6 @@
         ctx.fillStyle = getDynamicColor(load);
         ctx.fill();
 
-        // Center calculation for middle tier slices
         const midAng = (startAng + endAng) / 2;
         const midRad = (R1 + R2) / 2;
         const tx = CTR + midRad * Math.cos(midAng);
@@ -196,7 +184,7 @@
       requestAnimationFrame(render);
     }
 
-    // Connect system hooks to internal local framework API
+    // --- REWRITTEN CAM HARDWARE HOOK ---
     window.nzxt = {
       v1: {
         onMonitoringDataUpdate: (data) => {
@@ -206,15 +194,19 @@
           globalLoad = cpu.load;
           if (cpu.temperature) globalTemp = cpu.temperature;
 
-          if (cpu.cores && cpu.cores.length >= 24) {
+          // Attempt to find actual data arrays from CAM's data stream
+          const trueCores = cpu.cores || cpu.threads || [];
+          
+          if (trueCores.length >= 24) {
+            // Perfect scenario: map direct hardware thread readings
             for (let i = 0; i < 24; i++) {
-              coreLoads[i] = cpu.cores[i].load;
+              coreLoads[i] = typeof trueCores[i] === 'object' ? trueCores[i].load : trueCores[i];
             }
           } else {
-            // Jittered simulation fallback if standalone thread streams pause
+            // Hard fallback: map actual global load directly to all rings with NO artificial spinning/jitter.
+            // When the CPU idles, every core reads low. When you benchmark, they all spike strictly together.
             for (let i = 0; i < 24; i++) {
-              const noise = Math.sin(Date.now() / 400 + i) * 15;
-              coreLoads[i] = Math.max(0, Math.min(100, cpu.load + noise));
+              coreLoads[i] = globalLoad;
             }
           }
         }
