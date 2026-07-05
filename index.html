@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>285K Dartboard Liquid Monitor v2</title>
+  <title>285K Radial Progress Monitor</title>
   <style>
     * {
       box-sizing: border-box;
@@ -35,8 +35,8 @@
     const canvas = document.getElementById('krakenCanvas');
     const ctx = canvas.getContext('2d');
 
-    const CTR = 320; // Center points
-    const MAX_RAD = 310; // Outer boundary 
+    const CTR = 320; 
+    const MAX_RAD = 310; 
     const R3 = MAX_RAD;          // Outer Ring edge (310px)
     const R2 = MAX_RAD * 0.66;   // Middle Ring edge (~204px)
     const R1 = MAX_RAD * 0.33;   // Inner Circle edge (~102px)
@@ -44,22 +44,16 @@
     // Hardware State tracking
     let globalLoad = 0;
     let globalTemp = 0;
-    let coreLoads = new Array(24).fill(0); // 0-7 P-cores, 8-23 E-cores
+    let coreLoads = new Array(24).fill(0); 
 
     // Liquid wave animation variables
     let waveTime = 0;
 
-    // Helper: Dynamic color grading based on utilization
-    function getSliceColor(load, alpha = 0.25) {
-      if (load < 30) return `rgba(0, 255, 102, ${alpha})`;       // Green
-      if (load < 75) return `rgba(255, 153, 0, ${alpha})`;       // Orange
-      return `rgba(255, 51, 51, ${alpha})`;                     // Red
-    }
-
-    function getSliceStroke(load) {
-      if (load < 30) return '#00ff66';
-      if (load < 75) return '#ff9900';
-      return '#ff3333';
+    // Strict color rule helper: 90-100% is explicitly Red
+    function getDynamicColor(load) {
+      if (load >= 90) return '#ff3333'; // Red alert zone
+      if (load >= 40) return '#ff9900'; // Orange medium load
+      return '#00ff66';                // Green chill zone
     }
 
     // Main Draw Engine Loop
@@ -67,77 +61,85 @@
       ctx.clearRect(0, 0, 640, 640);
       waveTime += 0.05;
 
-      // --- 1. OUTER RING: 16 E-CORES ---
+      // --- 1. OUTER RING: 16 E-CORES (Fills from R3 inward to R2) ---
       const eCount = 16;
       for (let i = 0; i < eCount; i++) {
-        const startAng = (i * (360 / eCount) - 90) * Math.PI / 180;
-        const endAng = ((i + 1) * (360 / eCount) - 90) * Math.PI / 180;
-        const load = coreLoads[i + 8] || 0; // Index 8-23
+        const startAng = (i * (360 / eCount) - 90 + 0.5) * Math.PI / 180;
+        const endAng = ((i + 1) * (360 / eCount) - 90 - 0.5) * Math.PI / 180;
+        const load = coreLoads[i + 8] || 0; 
 
-        // Draw Pie Segment
+        // Draw the empty background track for the pie bar
         ctx.beginPath();
         ctx.arc(CTR, CTR, R3, startAng, endAng, false);
         ctx.arc(CTR, CTR, R2, endAng, startAng, true);
         ctx.closePath();
-        ctx.fillStyle = getSliceColor(load, 0.2);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
         ctx.fill();
         ctx.strokeStyle = '#111';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Accent outer dynamic rim border
+        // Calculate load bar fill pushing inward toward the center
+        const fillRadInward = R3 - ((load / 100) * (R3 - R2));
+
+        // Draw active progress bar fill segment
         ctx.beginPath();
-        ctx.arc(CTR, CTR, R3 - 2, startAng + 0.02, endAng - 0.02, false);
-        ctx.strokeStyle = getSliceStroke(load);
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        ctx.arc(CTR, CTR, R3, startAng, endAng, false);
+        ctx.arc(CTR, CTR, fillRadInward, endAng, startAng, true);
+        ctx.closePath();
+        ctx.fillStyle = getDynamicColor(load);
+        ctx.fill();
 
-        // Target center of the slice geometric zone
+        // Center text cleanly in the middle of the geometric segment
         const midAng = (startAng + endAng) / 2;
         const midRad = (R2 + R3) / 2;
         const tx = CTR + midRad * Math.cos(midAng);
-        const ty = CTR + midRad * Math.sin(midAng) + 5; // offset for text baseline
+        const ty = CTR + midRad * Math.sin(midAng) + 5;
 
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 16px sans-serif';
+        ctx.font = 'bold 15px sans-serif';
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'center';
         ctx.fillText(`${Math.round(load)}%`, tx, ty);
       }
 
-      // --- 2. MIDDLE RING: 8 P-CORES ---
+      // --- 2. MIDDLE RING: 8 P-CORES (Fills from R2 inward to R1) ---
       const pCount = 8;
       for (let i = 0; i < pCount; i++) {
-        const startAng = (i * (360 / pCount) - 90) * Math.PI / 180;
-        const endAng = ((i + 1) * (360 / pCount) - 90) * Math.PI / 180;
-        const load = coreLoads[i] || 0; // Index 0-7
+        const startAng = (i * (360 / pCount) - 90 + 0.7) * Math.PI / 180;
+        const endAng = ((i + 1) * (360 / pCount) - 90 - 0.7) * Math.PI / 180;
+        const load = coreLoads[i] || 0; 
 
-        // Draw Pie Segment
+        // Draw the empty background track for the pie bar
         ctx.beginPath();
         ctx.arc(CTR, CTR, R2, startAng, endAng, false);
         ctx.arc(CTR, CTR, R1, endAng, startAng, true);
         ctx.closePath();
-        ctx.fillStyle = getSliceColor(load, 0.35);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
         ctx.fill();
         ctx.strokeStyle = '#111';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Accent mid dynamic border line
+        // Calculate load bar fill pushing inward toward the center
+        const fillRadInward = R2 - ((load / 100) * (R2 - R1));
+
+        // Draw active progress bar fill segment
         ctx.beginPath();
-        ctx.arc(CTR, CTR, R2 - 2, startAng + 0.03, endAng - 0.03, false);
-        ctx.strokeStyle = getSliceStroke(load);
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        ctx.arc(CTR, CTR, R2, startAng, endAng, false);
+        ctx.arc(CTR, CTR, fillRadInward, endAng, startAng, true);
+        ctx.closePath();
+        ctx.fillStyle = getDynamicColor(load);
+        ctx.fill();
 
         // Center calculation for middle tier slices
         const midAng = (startAng + endAng) / 2;
         const midRad = (R1 + R2) / 2;
         const tx = CTR + midRad * Math.cos(midAng);
-        const ty = CTR + midRad * Math.sin(midAng) + 5;
+        const ty = CTR + midRad * Math.sin(midAng) + 6;
 
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 20px sans-serif';
+        ctx.font = 'bold 19px sans-serif';
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'center';
         ctx.fillText(`${Math.round(load)}%`, tx, ty);
@@ -151,17 +153,14 @@
       ctx.strokeStyle = '#222';
       ctx.lineWidth = 4;
       ctx.stroke();
-      ctx.clip(); // Mask everything inside the central hub bounds
+      ctx.clip(); 
 
-      // Calculate water line level based on 0-100 total utilization
       const fillHeight = (globalLoad / 100) * (R1 * 2);
       const waterLevelY = (CTR + R1) - fillHeight;
 
-      // Draw the animated liquid block
       ctx.beginPath();
       ctx.moveTo(CTR - R1, CTR + R1);
       
-      // Wave generator algorithm
       for (let x = CTR - R1; x <= CTR + R1; x++) {
         const wave1 = Math.sin(x * 0.06 + waveTime) * 5;
         const wave2 = Math.cos(x * 0.03 + waveTime * 1.5) * 3;
@@ -171,7 +170,6 @@
       ctx.lineTo(CTR + R1, CTR + R1);
       ctx.closePath();
       
-      // Gradient shading for real fluid look
       let liquidGrad = ctx.createLinearGradient(CTR, CTR - R1, CTR, CTR + R1);
       liquidGrad.addColorStop(0, '#00ffcc');
       liquidGrad.addColorStop(0.5, '#0066ff');
@@ -184,11 +182,9 @@
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       
-      // Giant central percentage
       ctx.font = '800 52px sans-serif';
       ctx.fillText(`${Math.round(globalLoad)}%`, CTR, CTR - 5);
       
-      // Context Sub-labels
       ctx.font = 'bold 11px sans-serif';
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
       ctx.fillText('TOTAL CPU LOAD', CTR, CTR + 20);
@@ -215,9 +211,9 @@
               coreLoads[i] = cpu.cores[i].load;
             }
           } else {
-            // Jittered mapping for uniform data feeds
+            // Jittered simulation fallback if standalone thread streams pause
             for (let i = 0; i < 24; i++) {
-              const noise = Math.sin(Date.now() / 400 + i) * 12;
+              const noise = Math.sin(Date.now() / 400 + i) * 15;
               coreLoads[i] = Math.max(0, Math.min(100, cpu.load + noise));
             }
           }
@@ -225,7 +221,6 @@
       }
     };
 
-    // Kick off animation sequence
     render();
   </script>
 </body>
