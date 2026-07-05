@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>285K Radial Progress Monitor v2</title>
+  <title>285K Radial Progress Monitor</title>
   <style>
     * {
       box-sizing: border-box;
@@ -41,9 +41,9 @@
     const R2 = MAX_RAD * 0.66;   
     const R1 = MAX_RAD * 0.33;   
 
-    let globalLoad = 5; // Start with a generic placeholder above 1%
+    let globalLoad = 0; 
     let globalTemp = 0;
-    let coreLoads = new Array(24).fill(5); 
+    let coreLoads = new Array(24).fill(0); 
 
     let waveTime = 0;
 
@@ -62,7 +62,7 @@
       for (let i = 0; i < eCount; i++) {
         const startAng = (i * (360 / eCount) - 90 + 0.5) * Math.PI / 180;
         const endAng = ((i + 1) * (360 / eCount) - 90 - 0.5) * Math.PI / 180;
-        const load = coreLoads[i + 8]; 
+        const load = coreLoads[i + 8] || 0; 
 
         ctx.beginPath();
         ctx.arc(CTR, CTR, R3, startAng, endAng, false);
@@ -100,7 +100,7 @@
       for (let i = 0; i < pCount; i++) {
         const startAng = (i * (360 / pCount) - 90 + 0.7) * Math.PI / 180;
         const endAng = ((i + 1) * (360 / pCount) - 90 - 0.7) * Math.PI / 180;
-        const load = coreLoads[i]; 
+        const load = coreLoads[i] || 0; 
 
         ctx.beginPath();
         ctx.arc(CTR, CTR, R2, startAng, endAng, false);
@@ -184,28 +184,44 @@
       requestAnimationFrame(render);
     }
 
-    // --- RE-ENGINEERED FAILSAFE HOOK ---
+    // --- AGGRESSIVE PARSING TELEMETRY HOOK ---
     window.nzxt = {
       v1: {
         onMonitoringDataUpdate: (data) => {
-          // Absolute structural check
-          if (!data || !data.cpus || !data.cpus[0]) return;
-          const cpu = data.cpus[0];
+          if (!data) return;
 
-          // Direct binding with fallback protection to avoid sticking at 1%
-          globalLoad = (typeof cpu.load === 'number') ? Math.max(1, cpu.load) : 5;
-          if (cpu.temperature) globalTemp = cpu.temperature;
+          // Universal fallback extractor for hardware definitions
+          let incomingCpu = null;
+          if (data.cpus && data.cpus[0]) {
+            incomingCpu = data.cpus[0];
+          } else if (data.cpu) {
+            incomingCpu = data.cpu;
+          }
 
-          // Target core extraction cleanly across both common profiles
-          const rawCores = cpu.cores || cpu.threads || [];
+          if (!incomingCpu) return;
+
+          // Parse absolute values with strict default checks
+          let extractedLoad = (typeof incomingCpu.load === 'number') ? incomingCpu.load : null;
+          if (extractedLoad === null && typeof incomingCpu.percentage === 'number') {
+            extractedLoad = incomingCpu.percentage;
+          }
+          
+          globalLoad = (extractedLoad !== null) ? extractedLoad : globalLoad;
+          
+          if (incomingCpu.temperature) {
+            globalTemp = incomingCpu.temperature;
+          }
+
+          // Force extract whatever array CAM provides for core states
+          const rawCores = incomingCpu.cores || incomingCpu.threads || incomingCpu.coreLoads || [];
 
           if (rawCores.length >= 24) {
             for (let i = 0; i < 24; i++) {
-              let val = typeof rawCores[i] === 'object' ? rawCores[i].load : rawCores[i];
-              coreLoads[i] = (typeof val === 'number') ? val : globalLoad;
+              let coreVal = typeof rawCores[i] === 'object' ? (rawCores[i].load ?? rawCores[i].percentage) : rawCores[i];
+              coreLoads[i] = (typeof coreVal === 'number') ? coreVal : globalLoad;
             }
           } else {
-            // Failsafe: distribute true global load across the matrix natively
+            // Direct structural synchronization 
             for (let i = 0; i < 24; i++) {
               coreLoads[i] = globalLoad;
             }
