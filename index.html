@@ -2,9 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>285K 24-Core Kraken Monitor</title>
+  <title>285K Dartboard Liquid Monitor</title>
   <style>
-    /* Absolute reset for Kraken Elite's 640x640 circular viewport */
     * {
       box-sizing: border-box;
       margin: 0;
@@ -14,8 +13,6 @@
       width: 640px;
       height: 640px;
       background-color: #000000;
-      color: #ffffff;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       overflow: hidden;
       display: flex;
       justify-content: center;
@@ -23,191 +20,213 @@
       position: relative;
       user-select: none;
     }
-
-    /* Circular clipping container to safely preview edges */
-    .kraken-display {
+    canvas {
       width: 640px;
       height: 640px;
-      position: relative;
-      border-radius: 50%;
-      overflow: hidden;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-
-    /* Core Layout Wrapper */
-    .core-rings {
-      position: relative;
-      width: 580px;
-      height: 580px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-
-    /* Individual Core Blocks */
-    .core-node {
-      position: absolute;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s ease;
-    }
-
-    /* Progress pill graphics */
-    .bar-container {
-      width: 12px;
-      height: 38px;
-      background: #1a1a1a;
-      border-radius: 6px;
-      overflow: hidden;
-      position: relative;
-      border: 1px solid #333;
-    }
-    .bar-fill {
-      position: absolute;
-      bottom: 0;
-      width: 100%;
-      height: 0%;
-      background: #00ff66;
-      transition: height 0.15s ease-out;
-    }
-
-    .core-label {
-      font-size: 11px;
-      font-weight: 700;
-      margin-top: 4px;
-      color: #888;
-    }
-
-    /* Center Info Pod */
-    .center-info {
-      position: absolute;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      z-index: 10;
-    }
-    .main-load {
-      font-size: 72px;
-      font-weight: 800;
-      line-height: 1;
-      color: #ffffff;
-    }
-    .cpu-label {
-      font-size: 14px;
-      letter-spacing: 2px;
-      color: #00ff66;
-      font-weight: 600;
-      margin-top: 4px;
-    }
-    .temp-display {
-      font-size: 24px;
-      font-weight: 500;
-      color: #aaa;
-      margin-top: 2px;
+      background: #000;
     }
   </style>
 </head>
 <body>
 
-  <div class="kraken-display">
-    <div class="center-info">
-      <div class="main-load" id="total-load">0%</div>
-      <div class="cpu-label">ULTRA 9 285K</div>
-      <div class="temp-display" id="cpu-temp">--°C</div>
-    </div>
-    
-    <div class="core-rings" id="rings-container">
-      <!-- Generated via JavaScript -->
-    </div>
-  </div>
+  <canvas id="krakenCanvas" width="640" height="640"></canvas>
 
   <script>
-    const container = document.getElementById('rings-container');
-    const totalLoadEl = document.getElementById('total-load');
-    const cpuTempEl = document.getElementById('cpu-temp');
+    const canvas = document.getElementById('krakenCanvas');
+    const ctx = canvas.getContext('2d');
 
-    // Configuration arrays specifying the circle placement geometry
-    // Outer Ring: 8 P-Cores (Radius: 230px)
-    // Inner Ring: 16 E-Cores (Radius: 155px)
-    const pCoreCount = 8;
-    const eCoreCount = 16;
-    const pRadius = 230; 
-    const eRadius = 155; 
+    const CTR = 320; // Center points
+    const MAX_RAD = 310; // Outer boundary 
+    const R3 = MAX_RAD;          // Outer Ring edge (310px)
+    const R2 = MAX_RAD * 0.66;   // Middle Ring edge (~204px)
+    const R1 = MAX_RAD * 0.33;   // Inner Circle edge (~102px)
 
-    // Generate P-Core Nodes
-    for (let i = 0; i < pCoreCount; i++) {
-      const angle = (i * (360 / pCoreCount)) * (Math.PI / 180) - (Math.PI / 2);
-      createCoreNode(i, angle, pRadius, 'P', '#00dfff');
+    // Hardware State tracking
+    let globalLoad = 0;
+    let globalTemp = 0;
+    let coreLoads = new Array(24).fill(0); // 0-7 P-cores, 8-23 E-cores
+
+    // Liquid wave animation variables
+    let waveTime = 0;
+
+    // Helper: Dynamic color grading based on utilization
+    function getSliceColor(load, alpha = 0.25) {
+      if (load < 30) return `rgba(0, 255, 102, ${alpha})`;       // Green
+      if (load < 75) return `rgba(255, 153, 0, ${alpha})`;       // Orange
+      return `rgba(255, 51, 51, ${alpha})`;                     // Red
     }
 
-    // Generate E-Core Nodes
-    for (let i = 0; i < eCoreCount; i++) {
-      const angle = (i * (360 / eCoreCount)) * (Math.PI / 180) - (Math.PI / 2);
-      createCoreNode(i + pCoreCount, angle, eRadius, 'E', '#00ff66');
+    function getSliceStroke(load) {
+      if (load < 30) return '#00ff66';
+      if (load < 75) return '#ff9900';
+      return '#ff3333';
     }
 
-    function createCoreNode(id, angle, radius, type, activeColor) {
-      const x = Math.round(290 + radius * Math.cos(angle)) - 25; 
-      const y = Math.round(290 + radius * Math.sin(angle)) - 30;
+    // Main Draw Engine Loop
+    function render() {
+      ctx.clearRect(0, 0, 640, 640);
+      waveTime += 0.05;
 
-      const node = document.createElement('div');
-      node.className = 'core-node';
-      node.style.left = `${x}px`;
-      node.style.top = `${y}px`;
-      node.style.width = '50px';
-      node.style.height = '60px';
+      // --- 1. OUTER RING: 16 E-CORES ---
+      const eCount = 16;
+      for (let i = 0; i < eCount; i++) {
+        const startAng = (i * (360 / eCount) - 90) * Math.PI / 180;
+        const endAng = ((i + 1) * (360 / eCount) - 90) * Math.PI / 180;
+        const load = coreLoads[i + 8] || 0; // Index 8-23
 
-      node.innerHTML = `
-        <div class="bar-container">
-          <div class="bar-fill" id="fill-core-${id}" style="background: ${activeColor}"></div>
-        </div>
-        <div class="core-label">${type}${id < pCoreCount ? id + 1 : id - pCoreCount + 1}</div>
-      `;
-      container.appendChild(node);
+        // Draw Pie Segment
+        ctx.beginPath();
+        ctx.arc(CTR, CTR, R3, startAng, endAng, false);
+        ctx.arc(CTR, CTR, R2, endAng, startAng, true);
+        ctx.closePath();
+        ctx.fillStyle = getSliceColor(load, 0.2);
+        ctx.fill();
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Accent outer dynamic rim border
+        ctx.beginPath();
+        ctx.arc(CTR, CTR, R3 - 2, startAng + 0.02, endAng - 0.02, false);
+        ctx.strokeStyle = getSliceStroke(load);
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Target center of the slice geometric zone
+        const midAng = (startAng + endAng) / 2;
+        const midRad = (R2 + R3) / 2;
+        const tx = CTR + midRad * Math.cos(midAng);
+        const ty = CTR + midRad * Math.sin(midAng) + 5; // offset for text baseline
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${Math.round(load)}%`, tx, ty);
+      }
+
+      // --- 2. MIDDLE RING: 8 P-CORES ---
+      const pCount = 8;
+      for (let i = 0; i < pCount; i++) {
+        const startAng = (i * (360 / pCount) - 90) * Math.PI / 180;
+        const endAng = ((i + 1) * (360 / pCount) - 90) * Math.PI / 180;
+        const load = coreLoads[i] || 0; // Index 0-7
+
+        // Draw Pie Segment
+        ctx.beginPath();
+        ctx.arc(CTR, CTR, R2, startAng, endAng, false);
+        ctx.arc(CTR, CTR, R1, endAng, startAng, true);
+        ctx.closePath();
+        ctx.fillStyle = getSliceColor(load, 0.35);
+        ctx.fill();
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Accent mid dynamic border line
+        ctx.beginPath();
+        ctx.arc(CTR, CTR, R2 - 2, startAng + 0.03, endAng - 0.03, false);
+        ctx.strokeStyle = getSliceStroke(load);
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Center calculation for middle tier slices
+        const midAng = (startAng + endAng) / 2;
+        const midRad = (R1 + R2) / 2;
+        const tx = CTR + midRad * Math.cos(midAng);
+        const ty = CTR + midRad * Math.sin(midAng) + 5;
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 20px sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${Math.round(load)}%`, tx, ty);
+      }
+
+      // --- 3. INNER CIRCLE: LIQUID TOTAL LOAD ENGINE ---
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(CTR, CTR, R1, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.strokeStyle = '#222';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.clip(); // Mask everything inside the central hub bounds
+
+      // Calculate water line level based on 0-100 total utilization
+      const fillHeight = (globalLoad / 100) * (R1 * 2);
+      const waterLevelY = (CTR + R1) - fillHeight;
+
+      // Draw the animated liquid block
+      ctx.beginPath();
+      ctx.moveTo(CTR - R1, CTR + R1);
+      
+      // Wave generator algorithm
+      for (let x = CTR - R1; x <= CTR + R1; x++) {
+        const wave1 = Math.sin(x * 0.06 + waveTime) * 5;
+        const wave2 = Math.cos(x * 0.03 + waveTime * 1.5) * 3;
+        ctx.lineTo(x, waterLevelY + wave1 + wave2);
+      }
+      
+      ctx.lineTo(CTR + R1, CTR + R1);
+      ctx.closePath();
+      
+      // Gradient shading for real fluid look
+      let liquidGrad = ctx.createLinearGradient(CTR, CTR - R1, CTR, CTR + R1);
+      liquidGrad.addColorStop(0, '#00ffcc');
+      liquidGrad.addColorStop(0.5, '#0066ff');
+      liquidGrad.addColorStop(1, '#001133');
+      ctx.fillStyle = liquidGrad;
+      ctx.fill();
+      ctx.restore();
+
+      // --- 4. CENTER HUD OVERLAY TEXT ---
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      
+      // Giant central percentage
+      ctx.font = '800 52px sans-serif';
+      ctx.fillText(`${Math.round(globalLoad)}%`, CTR, CTR - 5);
+      
+      // Context Sub-labels
+      ctx.font = 'bold 11px sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fillText('TOTAL CPU LOAD', CTR, CTR + 20);
+
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillStyle = '#00ff66';
+      ctx.fillText(globalTemp > 0 ? `${globalTemp}°C` : '--°C', CTR, CTR + 42);
+
+      requestAnimationFrame(render);
     }
 
-    // Hook directly into the NZXT CAM local Web Integration API
+    // Connect system hooks to internal local framework API
     window.nzxt = {
       v1: {
         onMonitoringDataUpdate: (data) => {
           if (!data || !data.cpus || data.cpus.length === 0) return;
-          
           const cpu = data.cpus[0];
           
-          // Update global stats
-          totalLoadEl.innerText = `${Math.round(cpu.load)}%`;
-          if (cpu.temperature) {
-            cpuTempEl.innerText = `${Math.round(cpu.temperature)}°C`;
-          }
+          globalLoad = cpu.load;
+          if (cpu.temperature) globalTemp = cpu.temperature;
 
-          // If individual core data isn't exposed yet by the firmware profile,
-          // it falls back cleanly to individual calculations or raw thread map arrays.
           if (cpu.cores && cpu.cores.length >= 24) {
             for (let i = 0; i < 24; i++) {
-              const fill = document.getElementById(`fill-core-${i}`);
-              if (fill) fill.style.height = `${cpu.cores[i].load}%`;
+              coreLoads[i] = cpu.cores[i].load;
             }
           } else {
-            // Fallback: If NZXT CAM aggregates lines, populate arrays evenly with minor jitter
-            // so your ring interface stays dynamic during testing.
+            // Jittered mapping for uniform data feeds
             for (let i = 0; i < 24; i++) {
-              const fill = document.getElementById(`fill-core-${i}`);
-              if (fill) {
-                const variance = (Math.sin(Date.now() / 500 + i) * 10);
-                const simulatedLoad = Math.max(0, Math.min(100, cpu.load + variance));
-                fill.style.height = `${simulatedLoad}%`;
-              }
+              const noise = Math.sin(Date.now() / 400 + i) * 12;
+              coreLoads[i] = Math.max(0, Math.min(100, cpu.load + noise));
             }
           }
         }
       }
     };
+
+    // Kick off animation sequence
+    render();
   </script>
 </body>
 </html>
